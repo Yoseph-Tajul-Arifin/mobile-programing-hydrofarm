@@ -1,0 +1,19 @@
+Bagian 1 View
+- Buat struktur folder dalam lib: models, screens, services
+- Buat model tanaman.dart (file yg tidak ada nomornya itu yg terupdate)
+- Buat screen tanaman_screen.dart dan tanaman_form.dart (file yg tidak ada nomornya itu yg terupdate)
+- Ubah main.dart (file yg tidak ada nomornya itu yg terupdate)
+
+Bagian 2 Insert dan View
+- Ubah tanaman_screen.dart menjadi statefull widget, tambahkan floating action buuton ke tanaman_form.dart
+- Ubah Bagian ElevatedButton() di file tanaman_form.dart, lalu import model tanaman.dart
+- Buat tanaman_detail.dart, import tanaman_detail di tanaman_screen, tambahkan onTap di bagian ListTile di file tanaman_screen
+
+Bagian 3 Edit Update
+- Pada file tanaman_form ubah Bagian Deklarasi Tanaman Form agar formnya bisa dipakai buat input atau buat edit, tambahkan init state  untuk edit dan dispose, ubah juga appbar, ubah juga pada bagian tombol simpan onPressed()
+- Pada file tanaman tanaman_detail, ubah struktur scaffold agar dapat menerima edit, lalu import tanaman_form
+- Pada file tanaman_screen ubah bagian onTap agar menunggu hasil dari tanaman_detail
+
+Bagian 4
+- Tambahkan tombol delete pada bagian appbar di file tanaman_detail
+- Ubah bagian onTap di file tanaman_screen agar bisa membedakan hasil edit dan delete
