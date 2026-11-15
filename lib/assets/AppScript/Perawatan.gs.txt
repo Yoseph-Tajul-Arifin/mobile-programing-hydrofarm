@@ -1,0 +1,308 @@
+const SHEET_PERAWATAN = 'jadwal_perawatan';
+
+// READ - Mengambil seluruh data jadwal perawatan
+function getPerawatan() {
+  try {
+    const sheet = SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName(SHEET_PERAWATAN);
+
+    if (!sheet) {
+      return jsonResponse({
+        success: false,
+        message: 'Sheet jadwal_perawatan tidak ditemukan'
+      });
+    }
+
+    const rows = sheet.getDataRange().getDisplayValues();
+    const data = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][0]) continue;
+
+      data.push({
+        id_jadwal: rows[i][0],
+        id_tanaman: rows[i][1],
+        tanggal_perawatan: rows[i][2],
+        jenis_perawatan: rows[i][3],
+        catatan: rows[i][4],
+        status: rows[i][5]
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      message: 'Data perawatan berhasil diambil',
+      data: data
+    });
+
+  } catch (error) {
+    return jsonResponse({
+      success: false,
+      message: String(error.message || error)
+    });
+  }
+}
+
+// INSERT
+function insertPerawatan(data) {
+  try {
+    const idTanaman = String(data.id_tanaman || '').trim();
+    const tanggal = String(data.tanggal_perawatan || '').trim();
+    const jenis = String(data.jenis_perawatan || '').trim();
+    const catatan = String(data.catatan || '').trim();
+    const status = String(data.status || '').trim();
+
+    // Validasi input
+    if (!idTanaman || !tanggal || !jenis || !status) {
+      return jsonResponse({
+        success: false,
+        message: 'Data perawatan belum lengkap'
+      });
+    }
+
+    const jenisValid = [
+      'Nutrisi',
+      'Pembersihan',
+      'Pengecekan Air',
+      'Pengecekan Tanaman'
+    ];
+
+    if (!jenisValid.includes(jenis)) {
+      return jsonResponse({
+        success: false,
+        message: 'Jenis perawatan tidak valid'
+      });
+    }
+
+    if (!['Terjadwal', 'Selesai'].includes(status)) {
+      return jsonResponse({
+        success: false,
+        message: 'Status perawatan tidak valid'
+      });
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('jadwal_perawatan');
+    const sheetTanaman = ss.getSheetByName('tanaman');
+
+    if (!sheet || !sheetTanaman) {
+      return jsonResponse({
+        success: false,
+        message: 'Sheet tidak ditemukan'
+      });
+    }
+
+    // Pastikan ID tanaman terdaftar
+    const ids = sheetTanaman
+      .getDataRange()
+      .getDisplayValues()
+      .slice(1)
+      .map(row => row[0]);
+
+    if (!ids.includes(idTanaman)) {
+      return jsonResponse({
+        success: false,
+        message: 'ID tanaman tidak ditemukan'
+      });
+    }
+
+    // ID unik untuk jadwal perawatan
+    const idJadwal = 'J' +
+      Utilities.getUuid()
+        .replace(/-/g, '')
+        .substring(0, 12);
+
+    sheet.appendRow([
+      idJadwal,
+      idTanaman,
+      tanggal,
+      jenis,
+      catatan,
+      status
+    ]);
+
+    return jsonResponse({
+      success: true,
+      message: 'Jadwal perawatan berhasil ditambahkan',
+      data: {
+        id_jadwal: idJadwal
+      }
+    });
+
+  } catch (error) {
+    return jsonResponse({
+      success: false,
+      message: String(error.message || error)
+    });
+  }
+}
+
+// UPDATE STATUS PERAWATAN
+function updateStatusPerawatan(data) {
+  const lock = LockService.getScriptLock();
+
+  try {
+    const idJadwal = String(data.id_jadwal || '').trim();
+
+    // Untuk versi praktikum, update hanya ke Selesai
+    const statusBaru = String(data.status || '').trim();
+
+    if (!idJadwal || statusBaru !== 'Selesai') {
+      return jsonResponse({
+        success: false,
+        message: 'ID jadwal atau status tidak valid'
+      });
+    }
+
+    lock.waitLock(10000);
+
+    const sheet = SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName('jadwal_perawatan');
+
+    if (!sheet) {
+      return jsonResponse({
+        success: false,
+        message: 'Sheet jadwal_perawatan tidak ditemukan'
+      });
+    }
+
+    const rows = sheet.getDataRange().getDisplayValues();
+
+    // Cari jadwal berdasarkan ID
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][0] === idJadwal) {
+
+        const statusLama = String(rows[i][5]).trim();
+
+        // Data selesai tidak boleh diubah
+        if (statusLama === 'Selesai') {
+          return jsonResponse({
+            success: false,
+            message: 'Perawatan sudah selesai dan terkunci'
+          });
+        }
+
+        if (statusLama !== 'Terjadwal') {
+          return jsonResponse({
+            success: false,
+            message: 'Status perawatan tidak valid'
+          });
+        }
+
+        // Update kolom F saja
+        sheet.getRange(i + 1, 6).setValue('Selesai');
+
+        return jsonResponse({
+          success: true,
+          message: 'Status perawatan berhasil diperbarui',
+          data: {
+            id_jadwal: idJadwal,
+            status: 'Selesai'
+          }
+        });
+      }
+    }
+
+    return jsonResponse({
+      success: false,
+      message: 'ID jadwal tidak ditemukan'
+    });
+
+  } catch (error) {
+    return jsonResponse({
+      success: false,
+      message: String(error.message || error)
+    });
+  } finally {
+    if (lock.hasLock()) {
+      lock.releaseLock();
+    }
+  }
+}
+
+// DELETE
+
+function deletePerawatan(data) {
+  const lock = LockService.getScriptLock();
+
+  try {
+    const idJadwal = String(data.id_jadwal || '').trim();
+
+    // Validasi ID jadwal
+    if (!idJadwal) {
+      return jsonResponse({
+        success: false,
+        message: 'ID jadwal wajib diisi'
+      });
+    }
+
+    lock.waitLock(10000);
+
+    const sheet = SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName('jadwal_perawatan');
+
+    if (!sheet) {
+      return jsonResponse({
+        success: false,
+        message: 'Sheet jadwal_perawatan tidak ditemukan'
+      });
+    }
+
+    const rows = sheet.getDataRange().getDisplayValues();
+
+    // Cari perawatan berdasarkan ID jadwal
+    for (let i = 1; i < rows.length; i++) {
+
+      if (rows[i][0] === idJadwal) {
+
+        const status = String(rows[i][5]).trim();
+
+        // Perawatan yang selesai tidak boleh dihapus
+        if (status === 'Selesai') {
+          return jsonResponse({
+            success: false,
+            message: 'Perawatan sudah selesai dan tidak dapat dihapus'
+          });
+        }
+
+        // Hanya status Terjadwal yang boleh dihapus
+        if (status !== 'Terjadwal') {
+          return jsonResponse({
+            success: false,
+            message: 'Status perawatan tidak valid'
+          });
+        }
+
+        // Hapus baris berdasarkan ID jadwal
+        sheet.deleteRow(i + 1);
+
+        return jsonResponse({
+          success: true,
+          message: 'Jadwal perawatan berhasil dihapus'
+        });
+      }
+    }
+
+    return jsonResponse({
+      success: false,
+      message: 'ID jadwal tidak ditemukan'
+    });
+
+  } catch (error) {
+    return jsonResponse({
+      success: false,
+      message: String(error.message || error)
+    });
+  } finally {
+    if (lock.hasLock()) {
+      lock.releaseLock();
+    }
+  }
+}
+
+
+
+

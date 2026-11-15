@@ -1,0 +1,326 @@
+const SHEET_NAME = 'tanaman';
+// Read
+function doGet(e) {
+  // Request khusus modul Jadwal Perawatan
+  if (e && e.parameter && e.parameter.modul === 'perawatan') {
+    return getPerawatan();
+  }
+  
+  const sheet = SpreadsheetApp
+    .getActiveSpreadsheet()
+    .getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    return jsonResponse({
+      success: false,
+      message: 'Sheet tanaman tidak ditemukan'
+    });
+  }
+
+  const rows = sheet.getDataRange().getDisplayValues();
+  const data = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    if (!rows[i][0]) continue;
+
+    data.push({
+      id_tanaman: rows[i][0],
+      nama_tanaman: rows[i][1],
+      jenis_tanaman: rows[i][2],
+      tanggal_tanam: rows[i][3],
+      umur_panen: Number(rows[i][4]),
+      status: rows[i][5]
+    });
+  }
+
+  return jsonResponse({
+    success: true,
+    message: 'Data tanaman berhasil diambil',
+    data: data
+  });
+}
+
+function jsonResponse(result) {
+  return ContentService
+    .createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Insert Old
+// function doPost(e) {
+//   try {
+//     const request = JSON.parse(e.postData.contents);
+
+//     if (request.action !== 'insert') {
+//       return jsonResponse({
+//         success: false,
+//         message: 'Action tidak dikenal'
+//       });
+//     }
+
+//     const nama = String(request.nama_tanaman ?? '').trim();
+//     const jenis = String(request.jenis_tanaman ?? '').trim();
+//     const tanggal = String(request.tanggal_tanam ?? '').trim();
+//     const umur = Number(request.umur_panen);
+//     const status = String(request.status ?? '').trim();
+
+//     if (!nama || !jenis || !tanggal || !status ||
+//         !Number.isInteger(umur) || umur <= 0) {
+//       return jsonResponse({
+//         success: false,
+//         message: 'Data tanaman tidak lengkap atau tidak valid'
+//       });
+//     }
+
+//     const sheet = SpreadsheetApp
+//       .getActiveSpreadsheet()
+//       .getSheetByName('tanaman');
+
+//     if (!sheet) {
+//       throw new Error('Sheet tanaman tidak ditemukan');
+//     }
+
+//     // Menghindari benturan ID saat ada dua insert bersamaan.
+//     const lock = LockService.getScriptLock();
+//     lock.waitLock(30000);
+
+//     try {
+//       const idTanaman = 'T' + Utilities.getUuid()
+//         .replace(/-/g, '')
+//         .substring(0, 12);
+
+//       sheet.appendRow([
+//         idTanaman,
+//         nama,
+//         jenis,
+//         tanggal,
+//         umur,
+//         status
+//       ]);
+
+//       SpreadsheetApp.flush();
+
+//       return jsonResponse({
+//         success: true,
+//         message: 'Tanaman berhasil ditambahkan',
+//         data: {
+//           id_tanaman: idTanaman,
+//           nama_tanaman: nama,
+//           jenis_tanaman: jenis,
+//           tanggal_tanam: tanggal,
+//           umur_panen: umur,
+//           status: status
+//         }
+//       });
+//     } finally {
+//       lock.releaseLock();
+//     }
+
+//   } catch (error) {
+//     return jsonResponse({
+//       success: false,
+//       message: String(error.message || error)
+//     });
+//   }
+// }
+
+// Insert dan Update
+function doPost(e) {
+  try {
+    const request = JSON.parse(e.postData.contents);
+    const action = request.action;
+    // Routing untuk Insert Jadwal Perawatan
+    if (request.modul === 'perawatan' && action === 'insert') {
+      return insertPerawatan(request);
+    }
+    // Routing UPDATE STATUS Perawatan
+    if (request.modul === 'perawatan' && action === 'update') {
+      return updateStatusPerawatan(request);
+    }
+    // Routing DELETE Perawatan
+    if (request.modul === 'perawatan' && action === 'delete') {
+      return deletePerawatan(request);
+    }
+
+    if (!['insert','update','delete'].includes(action)) {
+      return jsonResponse({
+        success: false,
+        message: 'Action tidak dikenal' 
+      });
+    }
+
+    const nama = String(request.nama_tanaman ?? '').trim();
+    const jenis = String(request.jenis_tanaman ?? '').trim();
+    const tanggal = String(request.tanggal_tanam ?? '').trim();
+    const umur = Number(request.umur_panen);
+    const status = String(request.status ?? '').trim();
+
+    if (action !== 'delete' &&
+    (!nama || !jenis || !tanggal || !status ||
+    !Number.isInteger(umur) || umur <= 0)) {
+  return jsonResponse({
+    success: false,
+    message: 'Data tanaman tidak lengkap atau tidak valid'
+  });
+}
+
+    const sheet = SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName('tanaman');
+
+    if (!sheet) {
+      throw new Error('Sheet tanaman tidak ditemukan');
+    }
+
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+
+    try {
+      if (action === 'insert') {
+        const idTanaman = 'T' + Utilities.getUuid()
+          .replace(/-/g, '')
+          .substring(0, 12);
+
+        sheet.appendRow([
+          idTanaman,
+          nama,
+          jenis,
+          tanggal,
+          umur,
+          status
+        ]);
+
+        SpreadsheetApp.flush();
+
+        return jsonResponse({
+          success: true,
+          message: 'Tanaman berhasil ditambahkan',
+          data: { id_tanaman: idTanaman }
+        });
+      }
+
+      if (action === 'update') {
+        const idTanaman = String(
+          request.id_tanaman ?? ''
+        ).trim();
+
+        if (!idTanaman) {
+          return jsonResponse({
+            success: false,
+            message: 'ID tanaman wajib diisi'
+          });
+        }
+
+        const lastRow = sheet.getLastRow();
+
+        if (lastRow < 2) {
+          return jsonResponse({
+            success: false,
+            message: 'Data tanaman tidak ditemukan'
+          });
+        }
+
+        // Cari ID di kolom A, mulai baris 2.
+        const ids = sheet
+          .getRange(2, 1, lastRow - 1, 1)
+          .getDisplayValues();
+
+        const index = ids.findIndex(
+          row => row[0] === idTanaman
+        );
+
+        if (index === -1) {
+          return jsonResponse({
+            success: false,
+            message: 'ID tanaman tidak ditemukan'
+          });
+        }
+
+        const nomorBaris = index + 2;
+
+        // Kolom B-F, ID pada kolom A tidak diubah.
+        sheet.getRange(nomorBaris, 2, 1, 5).setValues([[
+          nama,
+          jenis,
+          tanggal,
+          umur,
+          status
+        ]]);
+
+        SpreadsheetApp.flush();
+
+        return jsonResponse({
+          success: true,
+          message: 'Tanaman berhasil diperbarui',
+          data: { id_tanaman: idTanaman }
+        });
+      }
+
+      
+if (action === 'delete') {
+  const idTanaman = String(
+    request.id_tanaman ?? ''
+  ).trim();
+
+  if (!idTanaman) {
+    return jsonResponse({
+      success: false,
+      message: 'ID tanaman wajib diisi'
+    });
+  }
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return jsonResponse({
+      success: false,
+      message: 'Data tanaman tidak ditemukan'
+    });
+  }
+
+  // Membaca ID tanaman pada kolom A
+  const ids = sheet
+    .getRange(2, 1, lastRow - 1, 1)
+    .getDisplayValues();
+
+  // Mencari ID tanaman
+  const index = ids.findIndex(
+    row => row[0] === idTanaman
+  );
+
+  if (index === -1) {
+    return jsonResponse({
+      success: false,
+      message: 'ID tanaman tidak ditemukan'
+    });
+  }
+
+  const nomorBaris = index + 2;
+
+  // Menghapus baris tanaman
+  sheet.deleteRow(nomorBaris);
+
+  SpreadsheetApp.flush();
+
+  return jsonResponse({
+    success: true,
+    message: 'Tanaman berhasil dihapus',
+    data: {
+      id_tanaman: idTanaman
+    }
+  });
+}
+
+
+
+    } finally {
+      lock.releaseLock();
+    }
+
+  } catch (error) {
+    return jsonResponse({
+      success: false,
+      message: String(error.message || error)
+    });
+  }
+}
